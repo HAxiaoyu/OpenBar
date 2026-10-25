@@ -43,6 +43,9 @@ final class MenuBarManager: NSObject {
 
     private var autoCollapseTask: Task<Void, Never>?
     private var settingsObserver: NSObjectProtocol?
+    /// macOS 27 can deliver one click through both the button action and the
+    /// expanded-interface delegate. Drop the second delivery.
+    private var lastClickUptime: TimeInterval = -.infinity
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -154,24 +157,44 @@ final class MenuBarManager: NSObject {
         if let button = toggleItem.statusItem.button {
             button.target = self
             button.action = #selector(toggleItemClicked(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            // macOS 27 delivers the menu-bar click as an AppKit-defined event,
+            // not leftMouseUp, so the button never fires unless that mask is included.
+            var mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp]
+            if #available(macOS 27.0, *) {
+                mask.insert(.appKitDefined)
+                toggleItem.statusItem.expandedInterfaceDelegate = self
+            }
+            button.sendAction(on: mask)
         }
         for divider in [hiddenDivider, alwaysHiddenDivider] {
             divider.statusItem.button?.target = self
             divider.statusItem.button?.action = #selector(dividerClicked(_:))
+            if #available(macOS 27.0, *) {
+                divider.statusItem.expandedInterfaceDelegate = self
+            }
         }
     }
 
-    @objc private func toggleItemClicked(_ sender: NSStatusBarButton) {
+    /// Left click toggles. Option-click includes Always-Hidden. Right click opens the menu.
+    private func handleToggleClick() {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastClickUptime < 0.05 { return }
+        lastClickUptime = now
+
         let event = NSApp.currentEvent
         let flags = event?.modifierFlags ?? []
-        if event?.type == .rightMouseUp || flags.contains(.control) {
+        let type = event?.type
+        if type == .rightMouseUp || type == .rightMouseDown || flags.contains(.control) {
             showMenu()
         } else if flags.contains(.option) {
             toggleAlwaysHidden(trigger: .toggleItem)
         } else {
             toggle(trigger: .toggleItem)
         }
+    }
+
+    @objc private func toggleItemClicked(_ sender: NSStatusBarButton) {
+        handleToggleClick()
     }
 
     /// Clicking a visible divider collapses everything.
@@ -218,4 +241,24 @@ final class MenuBarManager: NSObject {
     @objc private func menuSettings() { onOpenSettings?() }
     @objc private func menuOnboarding() { onOpenOnboarding?() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+}
+
+@available(macOS 27.0, *)
+extension MenuBarManager: NSStatusItemExpandedInterfaceDelegate {
+    nonisolated func statusItem(_ statusItem: NSStatusItem, didBegin session: NSStatusItemExpandedInterfaceSession) {
+        // AppKit calls this on the main thread. The parameters are not Sendable.
+        nonisolated(unsafe) let statusItem = statusItem
+        nonisolated(unsafe) let session = session
+        MainActor.assumeIsolated {
+            if statusItem === toggleItem.statusItem {
+                handleToggleClick()
+            } else {
+                collapse()
+            }
+            // No panel under the icon. End the session or the menu bar swallows later clicks.
+            session.cancel()
+        }
+    }
+
+    nonisolated func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {}
 }
