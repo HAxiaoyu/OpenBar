@@ -95,15 +95,14 @@ under `OpenBar/` is compiled automatically — no project-file edits needed.
 
 ## Roadmap
 
+Detailed plan (from architecture review): see **[ROADMAP.md](ROADMAP.md)**.
+
 * **v0.1 (this)** — permission-free MVP described above.
-* **v0.2** — Accessibility (optional): exact app-menu hit-testing, programmatic
-  icon moving (synthesized ⌘-drag), "show hidden items under the notch".
-* **v0.3** — Secondary bar: display hidden icons in a floating panel below the
-  menu bar (ScreenCaptureKit, Screen Recording permission), menu bar item search.
-* **v0.4** — Triggers & profiles: show items on battery level, Wi-Fi change,
-  app focus, time; per-display/per-profile layouts.
-* **v0.5** — Menu bar appearance: tint, shadow, border, rounded "split" style,
-  spacing control.
+* **Phase 0** — Harden separator model (display changes, layout repair).
+* **Phase 1** — Read-only Accessibility catalog of menu-bar items.
+* **Phase 2** — Floating bar + AX press for hidden items.
+* **Phase 3** — Logical layout + optional movers / profiles.
+* **Phase 4** — Multi-display / fullscreen stability and polish.
 
 ## Clean-room & license
 
