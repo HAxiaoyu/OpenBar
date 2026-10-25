@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcscmblueprint
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+.swiftpm/
+/Packages
+# Keep the resolved file out of git until we pin versions deliberately
+# (remove this line to commit it for reproducible builds)
+OpenBar.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# Archives / exports
+*.xcarchive
+*.dmg
+*.zip
+
+# Editors
+.vscode/
+.idea/
+*.swp
