@@ -24,7 +24,7 @@ extension KeyboardShortcuts.Name {
 final class HotkeyController {
     init(manager: MenuBarManager) {
         KeyboardShortcuts.onKeyUp(for: .toggleHiddenSection) { [weak manager] in
-            manager?.toggle(trigger: .hotkey)
+            manager?.toggleHiddenBar()
         }
         KeyboardShortcuts.onKeyUp(for: .toggleAllSections) { [weak manager] in
             manager?.toggleAlwaysHidden(trigger: .hotkey)

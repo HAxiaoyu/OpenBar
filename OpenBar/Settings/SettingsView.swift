@@ -22,6 +22,8 @@ struct SettingsView: View {
                 .tabItem { Label("Behavior", systemImage: "cursorarrow.click.2") }
             HotkeySettingsView()
                 .tabItem { Label("Hotkeys", systemImage: "keyboard") }
+            ItemsSettingsView(store: .shared)
+                .tabItem { Label("Items", systemImage: "list.bullet") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
@@ -53,6 +55,15 @@ private struct GeneralSettingsView: View {
                         Button("Open…") { LaunchAtLogin.openSystemSettings() }
                     }
                 }
+            }
+
+            Section("Layout") {
+                Button("Repair Layout…") {
+                    NotificationCenter.default.post(name: .openBarRepairLayout, object: nil)
+                }
+                Text("Puts the arrow and the two divider lines back in order, then leaves them expanded. ⌘-drag icons to the left of a line to hide them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Appearance") {
@@ -129,6 +140,75 @@ private struct HotkeySettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Items
+
+private struct ItemsSettingsView: View {
+    @Bindable var store: MenuBarItemStore
+
+    var body: some View {
+        Group {
+            if !store.isTrusted {
+                ContentUnavailableView {
+                    Label("Accessibility Needed", systemImage: "hand.raised")
+                } description: {
+                    Text("OpenBar lists menu bar icons so you can see what is on the bar. It does not move or click them.")
+                } actions: {
+                    Button("Allow Accessibility…") { AccessibilityPermission.prompt() }
+                    Button("Open System Settings") { AccessibilityPermission.openSystemSettings() }
+                }
+            } else {
+                Form {
+                    Section {
+                        ForEach(store.items) { item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.displayName)
+                                    .foregroundStyle(item.missingSince == nil ? .primary : .secondary)
+                                Text(caption(for: item))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text(store.isScanning ? "Scanning…" : "\(store.items.count) icons")
+                            Spacer()
+                            Button("Refresh") { Task { await store.refresh() } }
+                                .disabled(store.isScanning)
+                        }
+                    } footer: {
+                        if store.keptPreviousScan {
+                            Text("The last scan returned nothing, so the previous list was kept.")
+                        } else {
+                            Text("Read-only. Dimmed rows were seen before and were missing on the last scan.")
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+            }
+        }
+        .task {
+            await store.refresh()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if AccessibilityPermission.isTrusted != store.isTrusted {
+                    await store.refresh()
+                }
+            }
+        }
+    }
+
+    private func caption(for item: MenuBarItem) -> String {
+        var parts = [item.bundleID]
+        if let x = item.positionX, let y = item.positionY {
+            parts.append("x \(Int(x)) y \(Int(y))")
+        }
+        if item.missingSince != nil {
+            parts.append("missing")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

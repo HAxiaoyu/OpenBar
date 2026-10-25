@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowPresenter.present(
             id: "settings",
             title: String(localized: "OpenBar Settings"),
-            size: NSSize(width: 520, height: 460)
+            size: NSSize(width: 560, height: 520)
         ) {
             SettingsView(settings: AppSettings.shared)
         }

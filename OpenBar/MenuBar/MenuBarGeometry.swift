@@ -42,13 +42,16 @@ enum MenuBarGeometry {
     /// `true` if `location` is on a part of the menu bar that holds neither an
     /// app menu nor a status item.
     ///
-    /// Heuristic (v0.1, no permissions): the point must be
+    /// Heuristic (permission-free). The point must be
     ///   1. inside the menu bar,
-    ///   2. right of the notch on notched displays, or right of the screen's
-    ///      midpoint otherwise (where app menus normally end), and
+    ///   2. right of the notch on notched displays, or right of that screen's
+    ///      midpoint otherwise, and
     ///   3. not over any status-item window.
-    /// TODO(v0.2): with Accessibility permission, read the frontmost app's
-    /// menu bar item frames via AX to replace rule 2 with an exact check.
+    ///
+    /// Limits: a very wide app menu is treated as empty space; each display
+    /// uses its own frame, including one without a notch. The menu bar's own
+    /// window sits at main-menu level, so that level is not "a menu is open".
+    /// Phase 1 replaces rule 2 with Accessibility frames (see ROADMAP.md).
     static func isEmptyMenuBarSpace(at location: NSPoint) -> Bool {
         guard let screen = screen(containing: location),
               NSMouseInRect(location, menuBarFrame(on: screen), false)
@@ -71,14 +74,47 @@ enum MenuBarGeometry {
 
     /// `true` while any app (including ours) shows a menu — e.g. the user
     /// clicked a revealed status item and its menu is open.
+    ///
+    /// Popup windows cover other apps. `NSMenu` tracking covers our own menu
+    /// when the window list has not caught up yet. Torn-off menu level is the
+    /// same as floating windows, so it is not used here.
     static func isMenuOpen() -> Bool {
+        if menuTrackingDepth > 0 { return true }
         let menuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
         return onScreenWindows().contains { $0.layer == menuLevel }
     }
 
+    /// Windows above the menu bar, such as a status item's panel.
+    /// The cursor and other system overlays sit at extreme levels and are ignored.
+    static func overlayWindowIDs() -> Set<UInt32> {
+        let status = Int(CGWindowLevelForKey(.statusWindow))
+        return Set(onScreenWindows().compactMap { window in
+            guard window.layer > status, window.layer < 2000,
+                  window.bounds.width >= 40, window.bounds.height >= 20
+            else { return nil }
+            return window.id
+        })
+    }
+
+    static func startMenuTrackingWatch() {
+        guard !menuTrackingStarted else { return }
+        menuTrackingStarted = true
+        let center = NotificationCenter.default
+        center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { menuTrackingDepth += 1 }
+        }
+        center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { menuTrackingDepth = max(0, menuTrackingDepth - 1) }
+        }
+    }
+
     // MARK: - Private
 
+    private static var menuTrackingDepth = 0
+    private static var menuTrackingStarted = false
+
     private struct WindowInfo {
+        let id: UInt32
         let layer: Int
         /// CoreGraphics global coordinates (top-left origin).
         let bounds: CGRect
@@ -91,10 +127,11 @@ enum MenuBarGeometry {
 
         return list.compactMap { info in
             guard let layer = info[kCGWindowLayer as String] as? Int,
+                  let number = info[kCGWindowNumber as String] as? Int,
                   let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary)
             else { return nil }
-            return WindowInfo(layer: layer, bounds: bounds)
+            return WindowInfo(id: UInt32(number), layer: layer, bounds: bounds)
         }
     }
 

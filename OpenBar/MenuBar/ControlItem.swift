@@ -18,15 +18,14 @@ import AppKit
 ///                           ↑                ↑                  ↑
 ///                  .alwaysHidden          .hidden            .toggle
 ///
-/// Hiding works with the well-known "separator length" technique: a divider's
-/// `length` is set to a huge value, so it — and every status item to its left —
-/// no longer fits in the menu bar and macOS stops drawing them. Showing sets the
-/// length back to a small value. No Accessibility or Screen Recording
-/// permission is required.
+/// Hiding works with the separator-length technique: a divider's `length`
+/// grows until items to its left no longer fit. On macOS 27 a length past the
+/// status area is dropped from the layout and hides nothing, so the caller
+/// passes a length that still fits. No Accessibility permission is required.
 @MainActor
 final class ControlItem {
     enum Role: String, CaseIterable {
-        /// OpenBar's own icon. Always visible; click to expand/collapse.
+        /// OpenBar's own icon. Always visible; click to show the hidden bar.
         case toggle
         /// Divider: icons to its left (up to `.alwaysHidden`) form the Hidden section.
         case hidden
@@ -34,17 +33,29 @@ final class ControlItem {
         case alwaysHidden
 
         /// Stable name so macOS remembers the item's position across launches.
-        var autosaveName: String { "OpenBar_\(rawValue)" }
+        var autosaveName: String { "OpenBar_v6_\(rawValue)" }
 
-        /// Seed position used the very first time the item is created. Smaller
-        /// numbers sit further right, so this yields `[alwaysHidden][hidden][toggle]`.
+        /// Where the item wants to sit. On macOS 27 a smaller value sits further
+        /// right, and 0 is the default slot on the left, so these stay in the
+        /// hundreds. Before macOS 27, smaller sat further right as 0, 1, 2.
         var initialPreferredPosition: Double {
-            switch self {
-            case .toggle: 0
-            case .hidden: 1
-            case .alwaysHidden: 2
+            if #available(macOS 27, *) {
+                switch self {
+                case .alwaysHidden: 400
+                case .hidden: 180
+                case .toggle: 80
+                }
+            } else {
+                switch self {
+                case .toggle: 0
+                case .hidden: 1
+                case .alwaysHidden: 2
+                }
             }
         }
+
+        /// Left to right. This is the only order in which the sections work.
+        static let leftToRight: [Role] = [.alwaysHidden, .hidden, .toggle]
     }
 
     /// Length used to push the divider (and everything left of it) off-screen.
@@ -52,7 +63,7 @@ final class ControlItem {
     static let collapsedLength: CGFloat = 10_000
 
     let role: Role
-    let statusItem: NSStatusItem
+    private(set) var statusItem: NSStatusItem
 
     private(set) var isExpanded = true
 
@@ -65,6 +76,24 @@ final class ControlItem {
         // (removing a divider would make hidden icons unreachable).
         statusItem.behavior = []
         statusItem.isVisible = true
+        configureButton()
+    }
+
+    func removeFromStatusBar() {
+        NSStatusBar.system.removeStatusItem(statusItem)
+    }
+
+    /// Drop the current item and create a new one at `initialPreferredPosition`.
+    /// Overwrites a position the user (or AppKit) previously saved.
+    func installAtPreferredPosition() {
+        let defaults = UserDefaults.standard
+        defaults.set(role.initialPreferredPosition, forKey: "NSStatusItem Preferred Position \(role.autosaveName)")
+        defaults.set(true, forKey: "NSStatusItem Visible \(role.autosaveName)")
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = role.autosaveName
+        item.behavior = []
+        item.isVisible = true
+        statusItem = item
         configureButton()
     }
 
@@ -86,8 +115,9 @@ final class ControlItem {
         button.toolTip = description
     }
 
-    /// Expand or collapse a divider.
-    func setDivider(expanded: Bool, showsGlyph: Bool) {
+    /// Expand or collapse a divider. `collapsedLength` has to stay in the menu
+    /// bar; a longer value is removed from the layout and hides nothing.
+    func setDivider(expanded: Bool, showsGlyph: Bool, collapsedLength: CGFloat = ControlItem.collapsedLength) {
         precondition(role != .toggle)
         isExpanded = expanded
         guard let button = statusItem.button else { return }
@@ -100,11 +130,12 @@ final class ControlItem {
                 statusItem.length = 0
             }
             button.isEnabled = true
+            button.alphaValue = 1
         } else {
-            // Clear the image so nothing can flash in while the length animates.
             button.image = nil
             button.isEnabled = false
-            statusItem.length = Self.collapsedLength
+            button.alphaValue = 0
+            statusItem.length = collapsedLength
         }
     }
 
@@ -134,6 +165,17 @@ final class ControlItem {
     private static func seedDefaultsIfNeeded(for role: Role) {
         let defaults = UserDefaults.standard
         let positionKey = "NSStatusItem Preferred Position \(role.autosaveName)"
+        if #available(macOS 27, *) {
+            // A bad seed put the chevron on the left of the divider. Put the
+            // three controls back on the smaller-is-righter axis, once.
+            let migratedKey = "OpenBar.macOS27PositionOrder"
+            if defaults.integer(forKey: migratedKey) < 2 {
+                defaults.set(role.initialPreferredPosition, forKey: positionKey)
+                if role == .toggle {
+                    defaults.set(2, forKey: migratedKey)
+                }
+            }
+        }
         if defaults.object(forKey: positionKey) == nil {
             defaults.set(role.initialPreferredPosition, forKey: positionKey)
         }

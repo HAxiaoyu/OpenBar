@@ -39,7 +39,7 @@ struct OnboardingView: View {
                      detail: "Drag icons to the left of │ to hide them, or to the left of ‖ to keep them hidden until you ask for everything. Icons right of │ always stay visible.")
                 Step(number: 3,
                      title: "Click the chevron to show/hide",
-                     detail: "Click OpenBar's chevron (or an empty part of the menu bar, or your hotkey) to reveal hidden icons. ⌥-click reveals the Always-Hidden ones too. Right-click for Settings.")
+                     detail: "Click OpenBar's chevron (or your hotkey) to open hidden icons in a bar under the menu bar. To ⌘-drag icons into that section, right-click the chevron and choose Expand Hidden Section. ⌥-click reveals Always-Hidden. Right-click also opens Settings.")
             }
 
             Text("Tip: if an icon won't move, make sure the menu bar section is expanded first — you can't drag icons that are off-screen.")
